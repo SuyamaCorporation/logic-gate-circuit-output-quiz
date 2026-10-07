@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logic Gate Circuit Quiz</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #0a0f0a; }
+  .gate-svg text { font-family: monospace; }
+  .input-btn { transition: all 0.15s; }
+  .input-btn.active { background: #22c55e; color: #000; border-color: #16a34a; }
+  .input-btn:not(.active) { background: #1f2937; color: #9ca3af; border-color: #374151; }
+  .answer-btn { transition: all 0.15s; }
+  .correct { background: #14532d !important; border-color: #16a34a !important; color: #4ade80 !important; }
+  .wrong { background: #7f1d1d !important; border-color: #dc2626 !important; color: #f87171 !important; }
+</style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center bg-[#0a0f0a] text-white p-4">
+
+<div class="w-full max-w-2xl">
+  <div class="text-center mb-4">
+    <h1 class="text-3xl font-bold text-green-400 tracking-wide mb-1">Logic Gate Quiz</h1>
+    <p class="text-slate-400 text-sm">Determine the output of the circuit</p>
+  </div>
+
+  <!-- Stats -->
+  <div class="grid grid-cols-4 gap-3 mb-4">
+    <div class="bg-slate-900 rounded-lg p-2 text-center">
+      <div class="text-xs text-slate-400">Question</div>
+      <div id="qNum" class="text-xl font-bold text-white">1/20</div>
+    </div>
+    <div class="bg-slate-900 rounded-lg p-2 text-center">
+      <div class="text-xs text-slate-400">Score</div>
+      <div id="scoreDisplay" class="text-xl font-bold text-green-400">0</div>
+    </div>
+    <div class="bg-slate-900 rounded-lg p-2 text-center">
+      <div class="text-xs text-slate-400">Streak</div>
+      <div id="streakDisplay" class="text-xl font-bold text-yellow-400">0</div>
+    </div>
+    <div class="bg-slate-900 rounded-lg p-2 text-center">
+      <div class="text-xs text-slate-400">Level</div>
+      <div id="levelDisplay" class="text-xl font-bold text-cyan-400">1</div>
+    </div>
+  </div>
+
+  <!-- Circuit Diagram -->
+  <div class="bg-slate-900 rounded-xl p-4 mb-4">
+    <div id="circuitContainer" class="flex justify-center">
+      <svg id="circuitSvg" width="500" height="180" aria-label="Logic gate circuit diagram"></svg>
+    </div>
+  </div>
+
+  <!-- Input Controls (for build-your-own mode) -->
+  <div id="inputControls" class="bg-slate-900 rounded-xl p-4 mb-4 hidden">
+    <div class="text-sm text-slate-400 mb-2">Build-Your-Own: Toggle inputs and see truth table</div>
+    <div id="inputBtns" class="flex gap-3 mb-3 flex-wrap"></div>
+    <div id="liveOutput" class="text-lg font-bold text-green-400"></div>
+    <div id="truthTable" class="mt-3 text-xs text-slate-300 overflow-x-auto"></div>
+  </div>
+
+  <!-- Answer / Feedback -->
+  <div id="quizSection">
+    <div class="text-center mb-3 text-slate-300">What is the output?</div>
+    <div class="flex justify-center gap-4 mb-4">
+      <button id="ans0Btn" class="answer-btn border-2 w-20 h-14 rounded-xl text-2xl font-bold border-slate-600 text-slate-300 hover:border-slate-400" aria-label="Answer 0">0</button>
+      <button id="ans1Btn" class="answer-btn border-2 w-20 h-14 rounded-xl text-2xl font-bold border-slate-600 text-slate-300 hover:border-slate-400" aria-label="Answer 1">1</button>
+    </div>
+    <div id="feedback" class="text-center font-bold text-lg h-8 mb-2"></div>
+    <div id="truthExplain" class="text-center text-sm text-slate-400 h-6"></div>
+  </div>
+
+  <!-- Mode Toggle -->
+  <div class="flex justify-center gap-3 mt-4">
+    <button id="buildModeBtn" class="bg-slate-700 hover:bg-slate-600 text-white font-bold px-4 py-2 rounded-lg transition text-sm" aria-label="Toggle build-your-own mode">Build-Your-Own Mode</button>
+    <button id="newSessionBtn" class="bg-green-900 hover:bg-green-800 text-white font-bold px-4 py-2 rounded-lg transition text-sm" aria-label="Start new quiz session">New Session</button>
+  </div>
+</div>
+
+<script>
+// ── Gate logic ─────────────────────────────────────────────────────────────
+const GATES = {
+  AND:  (a,b) => a & b,
+  OR:   (a,b) => a | b,
+  NOT:  (a)   => a ^ 1,
+  NAND: (a,b) => (a & b) ^ 1,
+  NOR:  (a,b) => (a | b) ^ 1,
+  XOR:  (a,b) => a ^ b,
+  XNOR: (a,b) => (a ^ b) ^ 1,
+};
+
+// Question templates by level
+function genQ(level) {
+  const r = () => Math.random() < 0.5 ? 1 : 0;
+  if (level === 1) {
+    const g = pick(['AND','OR','NOT']);
+    if (g === 'NOT') { const a=r(); return {gates:[{type:'NOT',in:['A']}], inputs:{A:a}, desc:`NOT A`, answer: GATES.NOT(a), level:1}; }
+    const a=r(),b=r(); return {gates:[{type:g,in:['A','B']}], inputs:{A:a,B:b}, desc:`A ${g} B`, answer:GATES[g](a,b), level:1};
+  }
+  if (level === 2) {
+    const g1=pick(['AND','OR']), g2=pick(['AND','OR','NOT']);
+    const a=r(),b=r(),c=r();
+    const mid = GATES[g1](a,b);
+    const ans = g2==='NOT' ? GATES.NOT(mid) : GATES[g2](mid,c);
+    return {gates:[{type:g1,in:['A','B']},{type:g2,in:['G1',g2==='NOT'?'':' C']}], inputs:{A:a,B:b,C:c}, desc:`(A ${g1} B) → ${g2}${g2!=='NOT'?' C':''}`, answer:ans, level:2};
+  }
+  if (level === 3) {
+    const g1=pick(['AND','OR']),g2=pick(['AND','OR']),g3=pick(['AND','OR','XOR']);
+    const a=r(),b=r(),c=r(),d=r();
+    const m1=GATES[g1](a,b), m2=GATES[g2](c,d), ans=GATES[g3](m1,m2);
+    return {inputs:{A:a,B:b,C:c,D:d}, desc:`(A ${g1} B) ${g3} (C ${g2} D)`, answer:ans, level:3};
+  }
+  if (level === 4) {
+    const g=pick(['NAND','NOR','XOR','XNOR']);
+    const a=r(),b=r();
+    return {inputs:{A:a,B:b}, desc:`A ${g} B`, answer:GATES[g](a,b), level:4};
+  }
+  // Level 5: half adder (sum bit = XOR, carry = AND)
+  const a=r(),b=r();
+  const out=pick(['sum','carry']);
+  const ans = out==='sum' ? GATES.XOR(a,b) : GATES.AND(a,b);
+  return {inputs:{A:a,B:b}, desc:`Half Adder: ${out} output`, answer:ans, level:5, halfAdder:true, halfAdderOut:out};
+}
+
+function pick(arr) { return arr[Math.floor(Math.random()*arr.length)]; }
+
+// ── SVG Drawing ────────────────────────────────────────────────────────────
+function drawCircuit(q, svg) {
+  svg.innerHTML = '';
+  const W = 500, H = 180;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  const S = (x,y,t,col='#4ade80',fs=13) => {
+    const el = document.createElementNS('http://www.w3.org/2000/svg','text');
+    el.setAttribute('x',x); el.setAttribute('y',y); el.setAttribute('fill',col);
+    el.setAttribute('font-size',fs); el.setAttribute('font-family','monospace');
+    el.setAttribute('text-anchor','middle'); el.textContent=t; svg.appendChild(el);
+  };
+  const line = (x1,y1,x2,y2,col='#4ade80',w=2) => {
+    const el=document.createElementNS('http://www.w3.org/2000/svg','line');
+    el.setAttribute('x1',x1);el.setAttribute('y1',y1);el.setAttribute('x2',x2);el.setAttribute('y2',y2);
+    el.setAttribute('stroke',col);el.setAttribute('stroke-width',w); svg.appendChild(el);
+  };
+  const rect = (x,y,w,h,fill,stroke='#4ade80') => {
+    const el=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    el.setAttribute('x',x);el.setAttribute('y',y);el.setAttribute('width',w);el.setAttribute('height',h);
+    el.setAttribute('fill',fill);el.setAttribute('stroke',stroke);el.setAttribute('stroke-width',2);
+    el.setAttribute('rx',4); svg.appendChild(el);
+  };
+
+  const {inputs, desc, level:lv, halfAdder, halfAdderOut} = q;
+  const keys = Object.keys(inputs);
+
+  if (halfAdder) {
+    // Half adder diagram
+    const gx=210,gy1=60,gy2=110;
+    keys.forEach((k,i) => {
+      const iy = 60 + i*50;
+      S(30, iy+5, `${k}=${inputs[k]}`, '#94a3b8');
+      line(50,iy,gx-10,gy1+20,halfAdderOut==='sum'?'#4ade80':'#94a3b8');
+      line(50,iy,gx-10,gy2+20,'#4ade80');
+    });
+    rect(gx,gy1,80,40,'#0f172a'); S(gx+40,gy1+24,'XOR','#a78bfa',12);
+    rect(gx,gy2,80,40,'#0f172a'); S(gx+40,gy2+24,'AND','#fb923c',12);
+    line(gx+80,gy1+20,460,gy1+20,'#4ade80'); S(470,gy1+25,'SUM','#4ade80',11);
+    line(gx+80,gy2+20,460,gy2+20,'#94a3b8'); S(470,gy2+25,'CARRY','#94a3b8',11);
+    // Highlight selected output
+    if(halfAdderOut==='sum'){line(gx+80,gy1+20,460,gy1+20,'#fbbf24',3);S(470,gy1+25,'SUM ◄','#fbbf24',11);}
+    else {line(gx+80,gy2+20,460,gy2+20,'#fbbf24',3);S(470,gy2+25,'CARRY ◄','#fbbf24',11);}
+    S(250,170,`Question: ${desc}`,'#64748b',11);
+    return;
+  }
+
+  if (lv === 1) {
+    const isNot = desc.startsWith('NOT');
+    if (isNot) {
+      S(30,95,'A='+inputs.A,'#94a3b8'); line(60,90,180,90);
+      rect(180,65,100,50,'#0f172a'); S(230,93,'NOT','#e879f9');
+      // bubble
+      const circ=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      circ.setAttribute('cx',285);circ.setAttribute('cy',90);circ.setAttribute('r',7);
+      circ.setAttribute('fill','#0f172a');circ.setAttribute('stroke','#e879f9');circ.setAttribute('stroke-width',2);
+      svg.appendChild(circ);
+      line(292,90,400,90); S(420,95,'OUT','#4ade80');
+    } else {
+      ['A','B'].forEach((k,i)=>{ S(30,60+i*60,`${k}=${inputs[k]}`,'#94a3b8'); line(60,55+i*60,180,55+i*60); });
+      const col = {AND:'#fb923c',OR:'#60a5fa',XOR:'#a78bfa',NAND:'#f472b6',NOR:'#34d399'}[desc.split(' ')[1]]||'#4ade80';
+      rect(180,40,100,80,'#0f172a',col); S(230,83,desc.split(' ')[1],col);
+      line(280,80,400,80); S(420,85,'OUT','#4ade80');
+    }
+  } else if (lv === 2) {
+    const parts = desc.match(/\(A (\w+) B\) → (\w+)(?: C)?/);
+    const g1 = parts?.[1]||'AND', g2 = parts?.[2]||'OR';
+    S(30,55,'A='+inputs.A,'#94a3b8'); S(30,95,'B='+inputs.B,'#94a3b8');
+    line(70,50,160,70); line(70,90,160,70);
+    rect(160,45,90,50,'#0f172a','#fb923c'); S(205,73,g1,'#fb923c');
+    line(250,70,320,70);
+    if (g2==='NOT') {
+      rect(320,45,90,50,'#0f172a','#e879f9'); S(365,73,'NOT','#e879f9');
+      const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx',414);c.setAttribute('cy',70);c.setAttribute('r',7);
+      c.setAttribute('fill','#0f172a');c.setAttribute('stroke','#e879f9');c.setAttribute('stroke-width',2);
+      svg.appendChild(c); line(421,70,470,70); S(480,75,'OUT','#4ade80');
+    } else {
+      S(275,95,'C='+inputs.C,'#94a3b8'); line(305,90,320,85);
+      rect(320,45,90,50,'#0f172a','#60a5fa'); S(365,73,g2,'#60a5fa');
+      line(410,70,470,70); S(480,75,'OUT','#4ade80');
+    }
+  } else if (lv === 3) {
+    const parts=desc.match(/\(A (\w+) B\) (\w+) \(C (\w+) D\)/);
+    const g1=parts?.[1]||'AND',g3=parts?.[2]||'XOR',g2=parts?.[3]||'OR';
+    S(20,45,'A='+inputs.A,'#94a3b8'); S(20,75,'B='+inputs.B,'#94a3b8');
+    S(20,115,'C='+inputs.C,'#94a3b8'); S(20,145,'D='+inputs.D,'#94a3b8');
+    line(55,40,130,60); line(55,70,130,60);
+    rect(130,38,80,44,'#0f172a','#fb923c'); S(170,62,g1,'#fb923c',11);
+    line(55,110,130,130); line(55,140,130,130);
+    rect(130,108,80,44,'#0f172a','#60a5fa'); S(170,132,g2,'#60a5fa',11);
+    line(210,60,310,90); line(210,130,310,90);
+    rect(310,65,80,50,'#0f172a','#a78bfa'); S(350,93,g3,'#a78bfa',11);
+    line(390,90,460,90); S(475,95,'OUT','#4ade80');
+  } else if (lv === 4) {
+    const gname=desc.split(' ')[1];
+    const col={NAND:'#f472b6',NOR:'#34d399',XOR:'#a78bfa',XNOR:'#fb923c'}[gname]||'#4ade80';
+    S(30,60,'A='+inputs.A,'#94a3b8'); S(30,100,'B='+inputs.B,'#94a3b8');
+    line(70,55,170,70); line(70,95,170,70);
+    rect(170,40,110,60,'#0f172a',col); S(225,73,gname,col);
+    if(gname==='NAND'||gname==='NOR'||gname==='XNOR'){
+      const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx',284);c.setAttribute('cy',70);c.setAttribute('r',7);
+      c.setAttribute('fill','#0f172a');c.setAttribute('stroke',col);c.setAttribute('stroke-width',2);
+      svg.appendChild(c); line(291,70,400,70);
+    } else { line(280,70,400,70); }
+    S(420,75,'OUT','#4ade80');
+  }
+  S(250,170,`Level ${lv}: ${desc}`,'#334155',11);
+}
+
+// ── Quiz State ─────────────────────────────────────────────────────────────
+let questions=[], qIdx=0, score=0, streak=0, answered=false;
+
+function levelForQ(i) {
+  if (i < 4) return 1;
+  if (i < 8) return 2;
+  if (i < 12) return 3;
+  if (i < 16) return 4;
+  return 5;
+}
+
+function newSession() {
+  questions = Array.from({length:20}, (_,i) => genQ(levelForQ(i)));
+  qIdx=0; score=0; streak=0; answered=false;
+  document.getElementById('inputControls').classList.add('hidden');
+  showQuestion();
+}
+
+function showQuestion() {
+  answered=false;
+  const q = questions[qIdx];
+  document.getElementById('qNum').textContent = `${qIdx+1}/20`;
+  document.getElementById('scoreDisplay').textContent = score;
+  document.getElementById('streakDisplay').textContent = streak;
+  document.getElementById('levelDisplay').textContent = q.level;
+  document.getElementById('feedback').textContent = '';
+  document.getElementById('truthExplain').textContent = '';
+  document.getElementById('ans0Btn').className = 'answer-btn border-2 w-20 h-14 rounded-xl text-2xl font-bold border-slate-600 text-slate-300 hover:border-slate-400';
+  document.getElementById('ans1Btn').className = 'answer-btn border-2 w-20 h-14 rounded-xl text-2xl font-bold border-slate-600 text-slate-300 hover:border-slate-400';
+  drawCircuit(q, document.getElementById('circuitSvg'));
+}
+
+function submitAnswer(ans) {
+  if (answered) return;
+  answered=true;
+  const q=questions[qIdx];
+  const correct = ans === q.answer;
+  const btn = ans===0 ? document.getElementById('ans0Btn') : document.getElementById('ans1Btn');
+  const otherBtn = ans===0 ? document.getElementById('ans1Btn') : document.getElementById('ans0Btn');
+  if (correct) {
+    btn.classList.add('correct'); score++; streak++;
+    document.getElementById('feedback').textContent = '✓ Correct!';
+    document.getElementById('feedback').className = 'text-center font-bold text-lg h-8 mb-2 text-green-400';
+  } else {
+    btn.classList.add('wrong');
+    otherBtn.classList.add('correct');
+    streak=0;
+    document.getElementById('feedback').textContent = '✗ Wrong! Answer was ' + q.answer;
+    document.getElementById('feedback').className = 'text-center font-bold text-lg h-8 mb-2 text-red-400';
+  }
+  document.getElementById('scoreDisplay').textContent = score;
+  document.getElementById('streakDisplay').textContent = streak;
+  // Explain
+  const explain = `${q.desc}: inputs ${JSON.stringify(q.inputs)} → output ${q.answer}`;
+  document.getElementById('truthExplain').textContent = explain;
+  setTimeout(() => {
+    qIdx++;
+    if (qIdx >= 20) { endSession(); return; }
+    showQuestion();
+  }, 1600);
+}
+
+function endSession() {
+  document.getElementById('feedback').textContent = `Session complete! Score: ${score}/20`;
+  document.getElementById('feedback').className = 'text-center font-bold text-lg h-8 mb-2 text-yellow-400';
+  drawCircuit({inputs:{A:1,B:0},desc:'Well done!',level:1,gates:[]},document.getElementById('circuitSvg'));
+}
+
+// ── Build-Your-Own Mode ────────────────────────────────────────────────────
+let buildGate = 'AND', buildInputs = {A:0,B:0};
+function showBuildMode() {
+  document.getElementById('inputControls').classList.toggle('hidden');
+  refreshBuild();
+}
+
+function refreshBuild() {
+  const keys = ['A','B'];
+  const container = document.getElementById('inputBtns');
+  container.innerHTML = '';
+  // Gate selector
+  const gsel = document.createElement('select');
+  gsel.className = 'bg-slate-800 text-green-400 border border-slate-600 rounded px-2 py-1 text-sm mr-2';
+  gsel.setAttribute('aria-label', 'Select gate type');
+  ['AND','OR','NOT','NAND','NOR','XOR','XNOR'].forEach(g => {
+    const opt=document.createElement('option'); opt.value=g; opt.textContent=g;
+    if(g===buildGate) opt.selected=true; gsel.appendChild(opt);
+  });
+  gsel.addEventListener('change', e=>{ buildGate=e.target.value; refreshBuild(); });
+  container.appendChild(gsel);
+  // Input buttons
+  const ins = buildGate==='NOT' ? ['A'] : ['A','B'];
+  ins.forEach(k => {
+    const btn=document.createElement('button');
+    btn.className = `input-btn border-2 px-3 py-1 rounded-lg font-bold text-sm ${buildInputs[k]?'active':''}`;
+    btn.textContent = `${k}=${buildInputs[k]}`;
+    btn.setAttribute('aria-label', `Toggle input ${k}`);
+    btn.addEventListener('click', ()=>{ buildInputs[k]^=1; refreshBuild(); });
+    container.appendChild(btn);
+  });
+  // Compute & show
+  const res = buildGate==='NOT' ? GATES.NOT(buildInputs.A) : GATES[buildGate](buildInputs.A,buildInputs.B);
+  document.getElementById('liveOutput').textContent = `Output: ${res}`;
+  // Truth table
+  let html='<table class="border-collapse text-xs"><tr>';
+  const tins=buildGate==='NOT'?['A']:['A','B'];
+  tins.forEach(k=>{ html+=`<th class="border border-slate-600 px-2 py-1">${k}</th>`; });
+  html+=`<th class="border border-slate-600 px-2 py-1">OUT</th></tr>`;
+  const rows=buildGate==='NOT'?[[0],[1]]:[[0,0],[0,1],[1,0],[1,1]];
+  rows.forEach(r=>{
+    const out=buildGate==='NOT'?GATES.NOT(r[0]):GATES[buildGate](r[0],r[1]);
+    const highlight=(buildGate==='NOT'?r[0]===buildInputs.A:r[0]===buildInputs.A&&r[1]===buildInputs.B)?'bg-green-900':'';
+    html+=`<tr class="${highlight}">`;
+    r.forEach(v=>{ html+=`<td class="border border-slate-600 px-2 py-1 text-center">${v}</td>`; });
+    html+=`<td class="border border-slate-600 px-2 py-1 text-center font-bold ${out?'text-green-400':'text-slate-400'}">${out}</td></tr>`;
+  });
+  html+='</table>';
+  document.getElementById('truthTable').innerHTML = html;
+}
+
+document.getElementById('ans0Btn').addEventListener('click', ()=>submitAnswer(0));
+document.getElementById('ans1Btn').addEventListener('click', ()=>submitAnswer(1));
+document.getElementById('buildModeBtn').addEventListener('click', showBuildMode);
+document.getElementById('newSessionBtn').addEventListener('click', newSession);
+
+newSession();
+</script>
+</body>
+</html>
